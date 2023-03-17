@@ -1,45 +1,37 @@
 import Express from "express";
-import uniqid from "uniqid";
-import { checkPoductsSchema, triggerBadRequest } from "./validation.js";
-import { getProducts, writeProducts } from "../../lib/fs-tools.js";
+import ProductsModel from "./model.js";
+import createHttpError from "http-errors";
+import q2m from "query-to-mongo";
 
 const productsRouter = Express.Router();
 
-productsRouter.post(
-  "/",
-  checkPoductsSchema,
-  triggerBadRequest,
-  async (req, res, next) => {
-    try {
-      const newProduct = {
-        ...req.body,
-        id: uniqid(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-
-      const allProducts = await getProducts();
-      allProducts.push(newProduct);
-      await writeProducts(allProducts);
-
-      res.status(201).send({ id: newProduct.id });
-    } catch (error) {
-      next(error);
-    }
+productsRouter.post("/", async (req, res, next) => {
+  try {
+    const newProduct = new ProductsModel(req.body);
+    const { _id } = await newProduct.save();
+    res.status(201).send({ _id });
+  } catch (error) {
+    next(error);
   }
-);
+});
 
 productsRouter.get("/", async (req, res, next) => {
   try {
-    const allProducts = await getProducts();
-    if (req.query && req.query.name) {
-      const matchedProducts = allProducts.filter((product) =>
-        product.name.toLowerCase().includes(req.query.name.toLocaleLowerCase())
-      );
-      res.send(matchedProducts);
-    } else {
-      res.send(allProducts);
-    }
+    const mongoQuery = q2m(req.query);
+    const products = await ProductsModel.find(
+      mongoQuery.criteria,
+      mongoQuery.options.fields
+    )
+      .limit(mongoQuery.options.limit)
+      .skip(mongoQuery.options.skip)
+      .sort(mongoQuery.options.sort);
+    const total = await ProductsModel.countDocuments(mongoQuery.criteria);
+    res.send({
+      links: mongoQuesry.links("http://localhost:3001/products", total),
+      total,
+      numberOfPages: Math.ceil(total / mongoQuery.options.limit),
+      products,
+    });
   } catch (error) {
     next(error);
   }
@@ -47,46 +39,59 @@ productsRouter.get("/", async (req, res, next) => {
 
 productsRouter.get("/:productsId", async (req, res, next) => {
   try {
-    const productId = req.params.productsId;
-    const allProducts = await getProducts();
-    const product = allProducts.find((e) => e.id === productId);
-    res.send(product);
+    const product = await ProductsModel.findById(req.params.productsId);
+    if (product) {
+      res.send(product);
+    } else {
+      next(
+        createHttpError(
+          404,
+          `Product with id ${req.params.productsId} not found!`
+        )
+      );
+    }
   } catch (error) {
     next(error);
   }
 });
 
-productsRouter.put(
-  "/:productsId",
-  checkPoductsSchema,
-  triggerBadRequest,
-  async (req, res, next) => {
-    try {
-      const productId = req.params.productsId;
-      const allProducts = await getProducts();
-      const index = allProducts.findIndex((e) => e.id === productId);
-      const oldProduct = allProducts[index];
-      const updatedProduct = {
-        ...oldProduct,
-        ...req.body,
-        updatedAt: new Date(),
-      };
-      allProducts[index] = updatedProduct;
-      await writeProducts(allProducts);
+productsRouter.put("/:productsId", async (req, res, next) => {
+  try {
+    const updatedProduct = await ProductsModel.findByIdAndUpdate(
+      req.params.productsId,
+      req.body,
+      { new: true, runValidators: true }
+    );
+    if (updatedProduct) {
       res.send(updatedProduct);
-    } catch (error) {
-      next(error);
+    } else {
+      next(
+        createHttpError(
+          404,
+          `Product with the id ${req.params.productsId} not found!`
+        )
+      );
     }
+  } catch (error) {
+    next(error);
   }
-);
+});
 
 productsRouter.delete("/:productsId", async (req, res, next) => {
   try {
-    const productId = req.params.productsId;
-    const allProducts = await getProducts();
-    const remainingProducts = allProducts.filter((e) => e.id !== productId);
-    await writeProducts(remainingProducts);
-    res.status(204).send();
+    const deletedProduct = await ProductsModel.findByIdAndDelete(
+      req.params.productsId
+    );
+    if (deletedProduct) {
+      res.status(204).send();
+    } else {
+      next(
+        createHttpError(
+          404,
+          `Product with id ${req.params.productsId} not found!`
+        )
+      );
+    }
   } catch (error) {
     next(error);
   }
