@@ -1,43 +1,48 @@
 import Express from "express";
-import uniqid from "uniqid";
-import {
-  checkReviewSchema,
-  triggerBadRequest,
-} from "../products/validation.js";
-import { getReviews, writeReviews } from "../../lib/fs-tools.js";
+import createHttpError from "http-errors";
+import ReviewsModel from "./model.js";
+import ProductsModel from "../products/model.js";
 
 const reviewsRouter = Express.Router();
 
-reviewsRouter.post(
-  "/:productsId/reviews",
-  checkReviewSchema,
-  triggerBadRequest,
-  async (req, res, next) => {
-    try {
-      const product_id = req.params.productsId;
-      const newReview = {
-        ...req.body,
-        review_id: uniqid(),
-        product_id: product_id,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      const allReviews = await getReviews();
-      allReviews.push(newReview);
-      await writeReviews(allReviews);
-      res.status(201).send({ review_id: newReview.review_id });
-    } catch (error) {
-      next(error);
-    }
+reviewsRouter.post("/:productsId/reviews", async (req, res, next) => {
+  try {
+    const productToChange = await ProductsModel.findById(req.params.productsId);
+    if (!productToChange)
+      return next(
+        createHttpError(
+          404,
+          `Product witht the id: ${req.params.productsId} not found.`
+        )
+      );
+    const newReview = new ReviewsModel(req.body);
+    const { _id } = await newReview.save();
+    const updatedProduct = await ProductsModel.findByIdAndUpdate(
+      req.params.productsId,
+      { $push: { reviews: { _id } } },
+      { new: true, runValidators: true }
+    );
+
+    res.status(201).send(updatedProduct);
+  } catch (error) {
+    next(error);
   }
-);
+});
 
 reviewsRouter.get("/:productsId/reviews", async (req, res, next) => {
   try {
-    const productId = req.params.productsId;
-    const allReviews = await getReviews();
-    const productReviews = allReviews.filter((e) => e.product_id === productId);
-    res.send(productReviews);
+    const product = await ProductsModel.findById(req.params.productsId);
+    if (!product)
+      return next(
+        createHttpError(
+          404,
+          `Product with the id: ${req.params.productsId} not found.`
+        )
+      );
+    const reviews = await ReviewsModel.find({
+      _id: { $in: product.reviews },
+    });
+    res.send(reviews);
   } catch (error) {
     next(error);
   }
@@ -45,50 +50,58 @@ reviewsRouter.get("/:productsId/reviews", async (req, res, next) => {
 
 reviewsRouter.get("/:productsId/reviews/:reviewsId", async (req, res, next) => {
   try {
-    const reviewId = req.params.reviewsId;
-    const allReviews = await getReviews();
-    const matchedReview = allReviews.find((e) => e.review_id === reviewId);
-    res.send(matchedReview);
+    const review = await ReviewsModel.findById(req.params.reviewsId);
+    if (review) {
+      res.send(review);
+    } else {
+      next(
+        createHttpError(
+          404,
+          `Review with the id: ${req.params.reviewsId} not found.`
+        )
+      );
+    }
   } catch (error) {
     next(error);
   }
 });
 
-reviewsRouter.put(
-  "/:productsId/reviews/:reviewsId",
-  checkReviewSchema,
-  triggerBadRequest,
-  async (req, res, next) => {
-    try {
-      const reviewId = req.params.reviewsId;
-      const allReviews = await getReviews();
-      const index = allReviews.findIndex((e) => e.review_id === reviewId);
-      const oldReview = allReviews[index];
-      const updatedReview = {
-        ...oldReview,
-        ...req.body,
-        updatedAt: new Date(),
-      };
-      allReviews[index] = updatedReview;
-      await writeReviews(allReviews);
+reviewsRouter.put("/:productsId/reviews/:reviewsId", async (req, res, next) => {
+  try {
+    const updatedReview = await ReviewsModel.findByIdAndUpdate(
+      req.params.reviewsId,
+      req.body,
+      { new: true, runValidators: true }
+    );
+    if (updatedReview) {
       res.send(updatedReview);
-    } catch (error) {
-      next(error);
+    } else {
+      next(
+        createHttpError(
+          404,
+          `Review with the id: ${req.params.reviewsId} not found.`
+        )
+      );
     }
+  } catch (error) {
+    next(error);
   }
-);
+});
 
 reviewsRouter.delete(
   "/:productsId/reviews/:reviewsId",
   async (req, res, next) => {
     try {
-      const reviewId = req.params.reviewsId;
-      const allReviews = await getReviews();
-      const remainingReviews = allReviews.filter(
-        (e) => e.review_id !== reviewId
+      const deletedReview = await ReviewsModel.findByIdAndDelete(
+        req.params.reviewsId
       );
-      await writeReviews(remainingReviews);
-      res.status(204).send();
+      if (deletedReview) {
+        res.status(204).send();
+      } else {
+        next(
+          createError(404, `Review with id ${req.params.reviewsId} not found!`)
+        );
+      }
     } catch (error) {
       next(error);
     }

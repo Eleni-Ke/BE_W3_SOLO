@@ -7,7 +7,7 @@ const reviewSchema = new Schema(
     comment: { type: String, required: true },
     rate: {
       type: Number,
-      required,
+      required: true,
       validate: {
         validator: function (rate) {
           return [1, 2, 3, 4, 5].includes(rate);

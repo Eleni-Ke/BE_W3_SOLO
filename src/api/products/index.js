@@ -27,7 +27,7 @@ productsRouter.get("/", async (req, res, next) => {
       .sort(mongoQuery.options.sort);
     const total = await ProductsModel.countDocuments(mongoQuery.criteria);
     res.send({
-      links: mongoQuesry.links("http://localhost:3001/products", total),
+      links: mongoQuery.links("http://localhost:3001/products", total),
       total,
       numberOfPages: Math.ceil(total / mongoQuery.options.limit),
       products,
