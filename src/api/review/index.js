@@ -84,7 +84,12 @@ reviewsRouter.put("/:productsId/reviews/:reviewsId", async (req, res, next) => {
       );
     }
   } catch (error) {
-    next(error);
+    console.log("The error name is:", error.name);
+    if (error.name === "StrictModeError") {
+      next(createHttpError(400, error.message));
+    } else {
+      next(error);
+    }
   }
 });
 

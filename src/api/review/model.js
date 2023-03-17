@@ -16,6 +16,7 @@ const reviewSchema = new Schema(
       },
     },
   },
+  { strict: "throw" },
   { timestamps: true }
 );
 
